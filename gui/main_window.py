@@ -63,7 +63,12 @@ class PuzzleGUI:
             print("Image Loaded") # This is just placeholder code until it is passed onto image manipulation
 
 
-if __name__ == "__main__":
+def main():
+    """Open the puzzle window, directly or through the project launcher."""
     main_window = tk.Tk()
     app = PuzzleGUI(main_window)
     main_window.mainloop()
+
+
+if __name__ == "__main__":
+    main()
