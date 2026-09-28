@@ -1,3 +1,5 @@
+"""GUI module for the puzzle application, displays the user interface using tkinter"""
+
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
@@ -8,7 +10,12 @@ from PIL import Image, ImageTk
 from image_processing.image_processor import ImageProcessingError, ImageProcessor
 
 class PuzzleGUI:
+    """
+    Main Tkinter interface for the image puzzle game.
+    Manages the layout, buttons, and canvas displays.
+    """
     def __init__(self, root):
+        # Initialize the GUI components, core objects, and button states
         self.root = root
         self.root.title("HIT137 Assignment 3 - Image Puzzle")
         self.root.geometry("1000x600")
@@ -38,7 +45,7 @@ class PuzzleGUI:
         self.size_dropdown.config(width=4, font=("Arial", 12))
         self.size_dropdown.pack(side=tk.LEFT, padx=(0, 10))
 
-        # Button to trigger image loading
+        # Load image button
         self.load_button = tk.Button(self.menu_frame, text="Load Image", font=("Arial", 12), command=self.load_image)
         self.load_button.pack(side=tk.LEFT, padx=5)
 
@@ -72,8 +79,6 @@ class PuzzleGUI:
             filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")]
         )
         if file_path:
-            print("Image Loaded") # This is just placeholder code until it is passed onto image manipulation
-
             try:
                 original_image, transformed_image = self.image_processor.process_image(
                     file_path,
