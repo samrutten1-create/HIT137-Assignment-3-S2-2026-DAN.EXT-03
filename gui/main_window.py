@@ -8,6 +8,7 @@ import cv2
 from PIL import Image, ImageTk
 
 from image_processing.image_processor import ImageProcessingError, ImageProcessor
+from game.game_manager import GameManager
 
 class PuzzleGUI:
     """
@@ -15,7 +16,9 @@ class PuzzleGUI:
     Manages the layout, buttons, and canvas displays.
     """
     def __init__(self, root):
-        # Initialize the GUI components, core objects, and button states
+        """
+        Set up the GUI components, core objects, and button states
+        """
         self.root = root
         self.root.title("HIT137 Assignment 3 - Image Puzzle")
         self.root.geometry("1000x600")
@@ -29,6 +32,9 @@ class PuzzleGUI:
         self.solve_button.config(command=self.solve_puzzle, state=tk.DISABLED)
 
     def setup_ui(self):
+        """ 
+        Places menu buttons, score widget and canvas frames on main window
+        """
         # Top frame for controls
         self.menu_frame = tk.Frame(self.root)
         self.menu_frame.pack(anchor="nw", fill=tk.X, padx=5, pady=5)
@@ -73,7 +79,9 @@ class PuzzleGUI:
         self.canvas_game.pack(side=tk.LEFT, padx=10)
 
     def load_image(self):
-        # Open file dialog to select image file
+        """ 
+        Open file dialog to select image file, processes the image and create a new game
+        """
         file_path = filedialog.askopenfilename(
             title="Select an Image",
             filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")]
@@ -106,6 +114,8 @@ class PuzzleGUI:
             )
             self.hint_button.config(text="Hint (3)", state=tk.NORMAL)
             self.solve_button.config(state=tk.NORMAL)
+
+            self.game_manager = GameManager(self)
 
     def display_image(self, canvas, image):
         """Convert an OpenCV image and display it in the centre of a canvas."""
@@ -156,7 +166,9 @@ class PuzzleGUI:
             )
 
     def solve_puzzle(self):
-        """Display the restored image when the existing Solve button is used."""
+        """
+        Display the restored image when the existing Solve button is used.
+        """
         if self.image_processor.original_image is None:
             return
 
@@ -169,7 +181,9 @@ class PuzzleGUI:
 
 
 def main():
-    """Open the puzzle window, directly or through the project launcher."""
+    """
+    Open the puzzle window, directly or through the project launcher.
+    """
     main_window = tk.Tk()
     app = PuzzleGUI(main_window)
     main_window.mainloop()
