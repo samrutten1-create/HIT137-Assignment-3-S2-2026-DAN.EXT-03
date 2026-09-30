@@ -50,3 +50,20 @@ class GameManager:
                     x, y, text="✔", fill="#00ff00", font=("Arial", 16, "bold"), tags="tick"
                 )
 
+    def left_click(self, event):
+        """
+        Handle left-click actions
+        """
+        print("Left Click") #temporary print to terminal for testing. replace with tile actions here
+
+    def right_click(self, event):
+        """
+        Handle Right Click actions
+        """
+        print("Right Click") #temporary print to terminal for testing. replace with tile actions here
+
+    def shift_left_click(self, event):
+        """
+        Handle Shift + left-click actions
+        """
+        print("Shift + Left Click") #temporary print to terminal for testing. replace with tile actions here
