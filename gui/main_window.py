@@ -117,6 +117,11 @@ class PuzzleGUI:
 
             self.game_manager = GameManager(self)
 
+            # send mouse events to the game manager
+            self.canvas_game.bind("<Button-1>", self.game_manager.left_click)
+            self.canvas_game.bind("<Button-3>", self.game_manager.right_click)
+            self.canvas_game.bind("<Shift-Button-1>", self.game_manager.shift_left_click)
+
     def display_image(self, canvas, image):
         """Convert an OpenCV image and display it in the centre of a canvas."""
         rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
