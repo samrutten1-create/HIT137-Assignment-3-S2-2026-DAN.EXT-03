@@ -66,6 +66,24 @@ class PuzzleGUI:
         self.score_label = tk.Label(self.menu_frame, text="Moves: 0 | Incorrect: 0", font=("Arial", 12))
         self.score_label.pack(side=tk.RIGHT, padx=20)
 
+        # Reserve space at the bottom for the player controls.
+        self.controls_label = tk.Label(
+            self.root,
+            text=(
+                "Left click to select a tile, then click "
+                "another to swap. Click the selected tile again to deselect.\n"
+                "Right click: rotate 90 degrees clockwise | "
+                "Shift + left click: flip horizontally.\n"
+                "Hint: show a tile and its home (3 per image) | "
+                "Solve: restore the original image."
+            ),
+            font=("Arial", 10),
+            justify=tk.CENTER,
+            anchor=tk.CENTER,
+            wraplength=940,
+        )
+        self.controls_label.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 10))
+
         # Frame for displaying images
         self.canvas_frame = tk.Frame(self.root)
         self.canvas_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=20)
