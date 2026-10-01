@@ -1,69 +1,252 @@
+"""Coordinate puzzle actions, scoring, hints, and completion."""
+
+import random
 import tkinter as tk
+from tkinter import messagebox
+
 from puzzle.puzzle import Puzzle
 
+
 class GameManager:
-    """ 
-    Controller class responsible for game logic and visual validation
-    """
+    """Manage one image's round using the existing puzzle and GUI objects."""
+
+    MAX_HINTS = 3
+
     def __init__(self, gui):
-        """
-        Start the game controller and check for correct tiles
-        """
         self.gui = gui
         self.processor = gui.image_processor
-        
-        # Start puzzle module
         self.puzzle = Puzzle(self.processor)
-        
-        # Initial check for any tiles that started in the correct position
+        self.moves = 0
+        self.hints_used = 0
+        self.hint_tile = None
+        self.finished = False
+
+        if self.processor.tiles and self.processor.incorrect_tile_count == 0:
+            self.finished = True
+
+        # A new manager is created on every successful image load.
+        self.gui.hint_button.config(command=self.show_hint)
+        self.gui.solve_button.config(command=self.solve_puzzle)
+        self._clear_hint()
+        self._draw_selection()
         self.mark_correct()
-
-    def mark_correct(self):
-        """
-        Draw a green tick on any tile that is in its exact home position
-        """
-        self.gui.canvas_game.delete("tick")
-        
-        if self.processor.transformed_image is None or not self.processor.tiles:
-            return
-            
-        img_h, img_w = self.processor.transformed_image.shape[:2]
-        
-        # Get grid size from puzzle module
-        grid_size = self.puzzle.grid_size
-        tile_w = img_w // grid_size
-        tile_h = img_h // grid_size
-
-        # Calculate offsets so the ticks align with the image
-        canvas_w = int(self.gui.canvas_game.cget("width"))
-        canvas_h = int(self.gui.canvas_game.cget("height"))
-        left_offset = (canvas_w - img_w) // 2
-        top_offset = (canvas_h - img_h) // 2
-        
-        for tile in self.processor.tiles:
-            if tile.is_correct:
-                row, col = tile.current_position
-                x = left_offset + (col * tile_w) + 20
-                y = top_offset + (row * tile_h) + 20
-                
-                self.gui.canvas_game.create_text(
-                    x, y, text="✔", fill="#00ff00", font=("Arial", 16, "bold"), tags="tick"
-                )
+        self.update_score()
+        self._update_buttons()
 
     def left_click(self, event):
-        """
-        Handle left-click actions
-        """
-        print("Left Click") #temporary print to terminal for testing. replace with tile actions here
+        """Select, deselect, or swap tiles. Only a swap counts as a move."""
+        position = self._get_position(event)
+        if position is not None:
+            swapped = self.puzzle.select(position)
+            if swapped:
+                self._record_move()
+            else:
+                self._draw_selection()
+        return "break"
 
     def right_click(self, event):
-        """
-        Handle Right Click actions
-        """
-        print("Right Click") #temporary print to terminal for testing. replace with tile actions here
+        """Rotate the clicked tile 90 degrees clockwise."""
+        position = self._get_position(event)
+        if position is not None:
+            self.puzzle.rotate(position)
+            self._record_move()
+        return "break"
 
     def shift_left_click(self, event):
-        """
-        Handle Shift + left-click actions
-        """
-        print("Shift + Left Click") #temporary print to terminal for testing. replace with tile actions here
+        """Flip the clicked tile horizontally without selecting it."""
+        position = self._get_position(event)
+        if position is not None:
+            self.puzzle.flip(position)
+            self._record_move()
+        return "break"
+
+    def show_hint(self):
+        """Mark one incorrect tile and its home, using one of three hints."""
+        if self.finished or self.hints_used >= self.MAX_HINTS:
+            return
+
+        incorrect_tiles = []
+        for tile in self.processor.tiles:
+            if not tile.is_correct:
+                incorrect_tiles.append(tile)
+
+        if not incorrect_tiles:
+            return
+
+        self.hint_tile = random.choice(incorrect_tiles)
+        self.hints_used += 1
+        self._draw_hint()
+        self._update_buttons()
+
+    def solve_puzzle(self):
+        """Restore the original board, clear the score, and end the round."""
+        if self.finished or self.processor.original_image is None:
+            return
+
+        self.processor.solved_image()
+        self.moves = 0
+        self.puzzle.selected_position = None
+        self.finished = True
+        self._clear_hint()
+        self._redraw_board()
+        messagebox.showinfo(
+            "Puzzle Solved",
+            "The original image has been restored.",
+            parent=self.gui.root,
+        )
+
+    def update_score(self):
+        """Display the moves made and tiles still in the wrong state."""
+        incorrect = self.processor.incorrect_tile_count
+        self.gui.score_label.config(
+            text=f"Moves: {self.moves} | Incorrect: {incorrect}"
+        )
+
+    def _record_move(self):
+        """Refresh the round after a successful swap, rotation, or flip."""
+        self.moves += 1
+        self._clear_hint()
+        self._redraw_board()
+        self._check_completion()
+
+    def _check_completion(self):
+        """Notify the player once and lock a board they have restored."""
+        if self.finished or not self.processor.tiles:
+            return
+        if self.processor.incorrect_tile_count != 0:
+            return
+
+        self.finished = True
+        self.puzzle.selected_position = None
+        self._clear_hint()
+        self._draw_selection()
+        self._update_buttons()
+        messagebox.showinfo(
+            "Puzzle Complete",
+            f"You restored the picture!\nMoves used: {self.moves}",
+            parent=self.gui.root,
+        )
+
+    def _update_buttons(self):
+        hint_state = tk.DISABLED
+        solve_state = tk.DISABLED
+        if self.processor.tiles and not self.finished:
+            solve_state = tk.NORMAL
+            if self.hints_used < self.MAX_HINTS:
+                hint_state = tk.NORMAL
+
+        remaining = self.MAX_HINTS - self.hints_used
+        self.gui.hint_button.config(text=f"Hint ({remaining})", state=hint_state)
+        self.gui.solve_button.config(state=solve_state)
+
+    def _image_bounds(self, canvas, image):
+        """Match the centred image placement used by the GUI."""
+        height, width = image.shape[:2]
+        left = (int(canvas.cget("width")) - width) // 2
+        top = (int(canvas.cget("height")) - height) // 2
+        return left, top, width, height
+
+    def _get_position(self, event):
+        """Convert a canvas click to a tile, ignoring margins and locked rounds."""
+        if self.finished or not self.processor.tiles:
+            return None
+        if self.processor.transformed_image is None:
+            return None
+
+        left, top, width, height = self._image_bounds(
+            self.gui.canvas_game, self.processor.transformed_image
+        )
+        x = event.x - left
+        y = event.y - top
+        if x < 0 or y < 0 or x >= width or y >= height:
+            return None
+
+        tile_width = width // self.puzzle.grid_size
+        tile_height = height // self.puzzle.grid_size
+        return y // tile_height, x // tile_width
+
+    def _redraw_board(self):
+        """Display the latest tile images, grid, and overlays."""
+        if not self.processor.tiles:
+            return
+
+        self.processor.transformed_image = self.processor.reassemble_image()
+        image = self.processor.transformed_image
+        self.gui.game_photo = self.gui.display_image(self.gui.canvas_game, image)
+        self.gui.draw_game_grid(image)
+        self.mark_correct()
+        self._draw_selection()
+        self._draw_hint()
+        self.update_score()
+        self._update_buttons()
+
+    def mark_correct(self):
+        """Draw a green tick only for tiles with correct position and orientation."""
+        self.gui.canvas_game.delete("tick")
+        if self.processor.transformed_image is None or not self.processor.tiles:
+            return
+
+        left, top, width, height = self._image_bounds(
+            self.gui.canvas_game, self.processor.transformed_image
+        )
+        tile_width = width // self.puzzle.grid_size
+        tile_height = height // self.puzzle.grid_size
+        for tile in self.processor.tiles:
+            if tile.is_correct:
+                row, column = tile.current_position
+                x = left + column * tile_width + min(14, tile_width // 2)
+                y = top + row * tile_height + min(14, tile_height // 2)
+                self.gui.canvas_game.create_text(
+                    x, y, text="\u2714", fill="#00aa00",
+                    font=("Arial", 12, "bold"), tags="tick",
+                )
+
+    def _draw_selection(self):
+        self.gui.canvas_game.delete("selection")
+        if self.puzzle.selected_position is None:
+            return
+
+        left, top, width, height = self._image_bounds(
+            self.gui.canvas_game, self.processor.transformed_image
+        )
+        tile_width = width // self.puzzle.grid_size
+        tile_height = height // self.puzzle.grid_size
+        row, column = self.puzzle.selected_position
+        x = left + column * tile_width
+        y = top + row * tile_height
+        self.gui.canvas_game.create_rectangle(
+            x, y, x + tile_width, y + tile_height,
+            outline="#ff9900", width=3, tags="selection",
+        )
+
+    def _clear_hint(self):
+        self.hint_tile = None
+        self._draw_hint()
+
+    def _draw_hint(self):
+        self.gui.canvas_game.delete("hint")
+        self.gui.canvas_orig.delete("hint")
+        if self.hint_tile is None:
+            return
+
+        self._draw_hint_circle(
+            self.gui.canvas_game, self.processor.transformed_image,
+            self.hint_tile.current_position,
+        )
+        self._draw_hint_circle(
+            self.gui.canvas_orig, self.processor.original_image,
+            self.hint_tile.home_position,
+        )
+
+    def _draw_hint_circle(self, canvas, image, position):
+        left, top, width, height = self._image_bounds(canvas, image)
+        tile_width = width // self.puzzle.grid_size
+        tile_height = height // self.puzzle.grid_size
+        row, column = position
+        x = left + column * tile_width + tile_width // 2
+        y = top + row * tile_height + tile_height // 2
+        radius = min(tile_width, tile_height) // 4
+        canvas.create_oval(
+            x - radius, y - radius, x + radius, y + radius,
+            outline="blue", width=3, tags="hint",
+        )
