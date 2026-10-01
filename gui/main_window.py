@@ -178,14 +178,18 @@ class PuzzleGUI:
                 top,
                 x,
                 top + image_height,
-                fill="#ff0000",
+                fill="#b0b0b0",
+                width=1,
+                stipple="gray50",
             )
             self.canvas_game.create_line(
                 left,
                 y,
                 left + image_width,
                 y,
-                fill="#ff0000",
+                fill="#b0b0b0",
+                width=1,
+                stipple="gray50",
             )
 
     def solve_puzzle(self):
