@@ -4,6 +4,7 @@ import random
 import tkinter as tk
 from tkinter import messagebox
 
+from puzzle.actions import FlipAction, RotateAction, SelectAction
 from puzzle.puzzle import Puzzle
 
 
@@ -16,6 +17,9 @@ class GameManager:
         self.gui = gui
         self.processor = gui.image_processor
         self.puzzle = Puzzle(self.processor)
+        self.select_action = SelectAction(self.puzzle)
+        self.rotate_action = RotateAction(self.puzzle)
+        self.flip_action = FlipAction(self.puzzle)
         self.moves = 0
         self.hints_used = 0
         self.hint_tile = None
@@ -35,29 +39,24 @@ class GameManager:
 
     def left_click(self, event):
         """Select, deselect, or swap tiles. Only a swap counts as a move."""
-        position = self._get_position(event)
-        if position is not None:
-            swapped = self.puzzle.select(position)
-            if swapped:
-                self._record_move()
-            else:
-                self._draw_selection()
-        return "break"
+        return self._handle_action(self.select_action, event)
 
     def right_click(self, event):
         """Rotate the clicked tile 90 degrees clockwise."""
-        position = self._get_position(event)
-        if position is not None:
-            self.puzzle.rotate(position)
-            self._record_move()
-        return "break"
+        return self._handle_action(self.rotate_action, event)
 
     def shift_left_click(self, event):
         """Flip the clicked tile horizontally without selecting it."""
+        return self._handle_action(self.flip_action, event)
+
+    def _handle_action(self, action, event):
+        """Use the same apply method for each action type (polymorphism)."""
         position = self._get_position(event)
         if position is not None:
-            self.puzzle.flip(position)
-            self._record_move()
+            if action.apply(position):
+                self._record_move()
+            else:
+                self._draw_selection()
         return "break"
 
     def show_hint(self):

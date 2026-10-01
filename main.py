@@ -3,7 +3,7 @@ import argparse
 import importlib
 # Run the GUI last because its event loop waits until the window is closed.
 MODULES = {
-    "tile": "puzzle.tile",
+    "actions": "puzzle.actions",
     "puzzle": "puzzle.puzzle",
     "image_processor": "image_processing.image_processor",
     "game_manager": "game.game_manager",
