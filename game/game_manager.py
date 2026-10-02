@@ -1,6 +1,8 @@
 """Coordinate puzzle actions, scoring, hints, and completion."""
 
+import math
 import random
+import time
 import tkinter as tk
 from tkinter import messagebox
 
@@ -13,7 +15,7 @@ class GameManager:
 
     MAX_HINTS = 3
 
-    def __init__(self, gui):
+    def __init__(self, gui, time_limit=0):
         self.gui = gui
         self.processor = gui.image_processor
         self.puzzle = Puzzle(self.processor)
@@ -24,6 +26,9 @@ class GameManager:
         self.hints_used = 0
         self.hint_tile = None
         self.finished = False
+        self.timed_out = False
+        self.deadline = None
+        self.timer_after_id = None
 
         if self.processor.tiles and self.processor.incorrect_tile_count == 0:
             self.finished = True
@@ -36,6 +41,51 @@ class GameManager:
         self.mark_correct()
         self.update_score()
         self._update_buttons()
+        self.gui.timer_label.config(text="Time: Off")
+        if time_limit > 0 and self.processor.tiles and not self.finished:
+            # A deadline prevents a delayed callback from slowing the countdown.
+            self.deadline = time.monotonic() + time_limit
+            self._update_timer()
+
+    def stop_timer(self):
+        """Cancel a pending countdown when solving, reloading, or closing."""
+        if self.timer_after_id is not None:
+            self.gui.root.after_cancel(self.timer_after_id)
+            self.timer_after_id = None
+
+    def _update_timer(self):
+        """Update the countdown once a second without blocking the GUI."""
+        self.timer_after_id = None
+        if self.finished or self.deadline is None:
+            return
+        remaining = max(0, math.ceil(self.deadline - time.monotonic()))
+        minutes, seconds = divmod(remaining, 60)
+        self.gui.timer_label.config(text=f"Time: {minutes}:{seconds:02d}")
+        if not self._time_expired():
+            self.timer_after_id = self.gui.root.after(1000, self._update_timer)
+
+    def _time_expired(self):
+        """Check the deadline before accepting a click or hint, too."""
+        if self.finished or self.deadline is None:
+            return self.timed_out
+        if time.monotonic() < self.deadline:
+            return False
+
+        self.finished = True
+        self.timed_out = True
+        self.stop_timer()
+        self.gui.timer_label.config(text="Time: 0:00 (expired)")
+        self.puzzle.selected_position = None
+        self._clear_hint()
+        self._draw_selection()
+        self._update_buttons()
+        messagebox.showinfo(
+            "Time Is Up",
+            "The time limit has ended. Load another image to try again, "
+            "or use Solve to view the restored picture.",
+            parent=self.gui.root,
+        )
+        return True
 
     def left_click(self, event):
         """Select, deselect, or swap tiles. Only a swap counts as a move."""
@@ -61,7 +111,7 @@ class GameManager:
 
     def show_hint(self):
         """Mark one incorrect tile and its home, using one of three hints."""
-        if self.finished or self.hints_used >= self.MAX_HINTS:
+        if self.finished or self._time_expired() or self.hints_used >= self.MAX_HINTS:
             return
 
         incorrect_tiles = []
@@ -79,13 +129,15 @@ class GameManager:
 
     def solve_puzzle(self):
         """Restore the original board, clear the score, and end the round."""
-        if self.finished or self.processor.original_image is None:
+        if (self.finished and not self.timed_out) or self.processor.original_image is None:
             return
 
         self.processor.solved_image()
+        self.stop_timer()
         self.moves = 0
         self.puzzle.selected_position = None
         self.finished = True
+        self.timed_out = False
         self._clear_hint()
         self._redraw_board()
         messagebox.showinfo(
@@ -116,6 +168,7 @@ class GameManager:
             return
 
         self.finished = True
+        self.stop_timer()
         self.puzzle.selected_position = None
         self._clear_hint()
         self._draw_selection()
@@ -133,6 +186,8 @@ class GameManager:
             solve_state = tk.NORMAL
             if self.hints_used < self.MAX_HINTS:
                 hint_state = tk.NORMAL
+        elif self.processor.tiles and self.timed_out:
+            solve_state = tk.NORMAL
 
         remaining = self.MAX_HINTS - self.hints_used
         self.gui.hint_button.config(text=f"Hint ({remaining})", state=hint_state)
@@ -147,7 +202,7 @@ class GameManager:
 
     def _get_position(self, event):
         """Convert a canvas click to a tile, ignoring margins and locked rounds."""
-        if self.finished or not self.processor.tiles:
+        if self.finished or self._time_expired() or not self.processor.tiles:
             return None
         if self.processor.transformed_image is None:
             return None

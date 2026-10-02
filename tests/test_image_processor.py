@@ -245,6 +245,42 @@ class ImageProcessorTests(unittest.TestCase):
                 np.testing.assert_array_equal(processor.original_image, original)
                 np.testing.assert_array_equal(processor.transformed_image, transformed)
 
+    def test_difficulty_changes_scramble_counts_without_reusing_tiles(self):
+        expected_counts = {
+            "Easy": (4, 8, 12), "Normal": (6, 12, 20), "Hard": (8, 15, 24),
+        }
+        for difficulty, counts in expected_counts.items():
+            for grid_size, count in zip((3, 4, 5), counts):
+                for seed in (0, 1, 42):
+                    with self.subTest(difficulty=difficulty, grid_size=grid_size, seed=seed):
+                        processor = ImageProcessor(max_size=(60, 60), rng=random.Random(seed))
+                        original, transformed = processor.process_image(self.path, grid_size, difficulty)
+                        self.assertEqual(processor.difficulty, difficulty)
+                        self.assertEqual(len(processor.transformation_log), count)
+                        self.assertEqual({step.kind for step in processor.transformation_log},
+                                         {"swap", "rotate", "flip"})
+                        targets = []
+                        for step in processor.transformation_log:
+                            targets.extend(step.tile_ids)
+                        self.assertEqual(len(targets), count + 1)
+                        self.assertEqual(len(set(targets)), len(targets))
+                        self.assertEqual(processor.incorrect_tile_count, count + 1)
+                        np.testing.assert_array_equal(processor.reassemble_image(), transformed)
+                        np.testing.assert_array_equal(processor.solved_image(), original)
+                        self.assertEqual(processor.incorrect_tile_count, 0)
+
+    def test_invalid_difficulty_preserves_the_current_board(self):
+        processor = ImageProcessor(rng=random.Random(42))
+        processor.process_image(self.path, 3, "Easy")
+        tiles = processor.tiles
+        before = processor.transformed_image.copy()
+        with self.assertRaises(ImageProcessingError):
+            processor.process_image(self.path, 5, "Expert")
+        self.assertIs(processor.tiles, tiles)
+        self.assertEqual(processor.grid_size, 3)
+        self.assertEqual(processor.difficulty, "Easy")
+        np.testing.assert_array_equal(processor.transformed_image, before)
+
 
 if __name__ == "__main__":
     unittest.main()

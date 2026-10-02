@@ -4,6 +4,7 @@ A desktop image puzzle for HIT137 Group Assignment 3, Semester 2, 2026.
 Choose an image and a 3x3, 4x4, or 5x5 grid, then restore the scrambled picture
 by swapping, rotating, and flipping tiles. The application tracks moves and
 incorrect tiles, provides up to three hints per image, and detects completion.
+Choose Easy, Normal, or Hard difficulty and optionally play against a time limit.
 
 ## Setup
 From the project folder, install the libraries:
@@ -35,6 +36,32 @@ Choose the grid size before clicking **Load Image**. The default is 3x3.
 JPG/JPEG, PNG, and BMP images are supported. The image is resized with its aspect
 ratio preserved and padded into an evenly divisible square grid. The original
 appears on the left; the playable puzzle appears on the right.
+
+## Difficulty and time limits
+
+Choose a difficulty and time limit before loading an image. The settings in
+the **Next image** row apply to the next successful load; changing them during
+a round does not change that round.
+
+Difficulty controls how many scramble operations are applied:
+
+| Difficulty | 3x3 | 4x4 | 5x5 |
+| --- | --- | --- | --- |
+| Easy | 4 | 8 | 12 |
+| Normal (default) | 6 | 12 | 20 |
+| Hard | 8 | 15 | 24 |
+
+Every difficulty includes swaps, rotations, and flips. No tile is targeted
+twice during scrambling, including both tiles in a swap.
+
+The time limit is **Off** by default, with optional limits of **2**, **5**, or
+**10 minutes**. The countdown starts after an image is loaded. When time runs
+out, a message appears, selection and hint circles clear, and tile input and
+hints are locked. **Solve** remains available to show the restored picture.
+
+Completion and Solve stop the timer. Loading another image starts a fresh round
+with the selected settings. Cancelled or invalid loads preserve the current
+round and its existing deadline; they do not pause or reset the timer.
 
 ## Controls
 
@@ -110,7 +137,7 @@ Run the automated tests from the project folder:
 python -B -m unittest discover -s tests -v
 ```
 
-The suite contains 30 tests using Python's built-in `unittest` framework, so no
+The suite contains 41 tests using Python's built-in `unittest` framework, so no
 additional testing library is required. Some tests check several inputs using
 subtests, including all three grid sizes.
 
@@ -118,6 +145,13 @@ subtests, including all three grid sizes.
 | --- | --- |
 | `tests/test_actions.py` | Selection, deselection, swaps, rotations, flips, mixed orientation changes, move counting, correctness ticks, hints and their limit, completion, Solve, cancelled/invalid loads, and round resets. Also checks tile edges and overlay alignment against Tkinter's actual image bounds, including the 399x399 board used for 3x3 puzzles. |
 | `tests/test_image_processor.py` | JPG/JPEG, PNG, and BMP loading; filenames with non-ASCII characters; grayscale and transparent images; invalid files and grid sizes; aspect ratio and padding; tile ordering and independent image copies; repeatable scrambling with no repeated tile targets; restoration; and preserving the board after a failed load. |
+
+Challenge tests cover each difficulty at every grid size, invalid difficulty
+settings, countdown accuracy after delayed callbacks, deadline checks before
+clicks and hints, Solve after timeout, and timer cancellation on completion,
+Solve, reload, and window closure. They also check a callback delivered by
+Tkinter and switching timing off for the next round. Clock-based tests use
+controlled time values so they do not wait several minutes to check expiry.
 
 To run just one test file:
 

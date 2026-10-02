@@ -152,11 +152,13 @@ class GameActionTests(unittest.TestCase):
         self.root.withdraw()
         self.addCleanup(self.root.destroy)
         self.gui = PuzzleGUI(self.root)
+        # Finish Tkinter's pending theme/layout work before this test's window closes.
+        self.root.update_idletasks()
         dialog_patch = patch("game.game_manager.messagebox.showinfo")
         self.showinfo = dialog_patch.start()
         self.addCleanup(dialog_patch.stop)
 
-    def start_round(self, grid_size, tile_side=4):
+    def start_round(self, grid_size, tile_side=4, time_limit=0):
         processor = make_processor(grid_size, tile_side)
         # Leave one tile rotated so the game starts with an unfinished board.
         Puzzle(processor).rotate((grid_size - 1, grid_size - 1))
@@ -169,7 +171,9 @@ class GameActionTests(unittest.TestCase):
             self.gui.canvas_game, processor.transformed_image
         )
         self.gui.draw_game_grid(processor.transformed_image)
-        return GameManager(self.gui)
+        manager = GameManager(self.gui, time_limit)
+        self.addCleanup(manager.stop_timer)
+        return manager
 
     def tile_event(self, manager, row, column):
         image = manager.processor.transformed_image
@@ -574,6 +578,190 @@ class GameActionTests(unittest.TestCase):
         self.assertEqual(manager.moves, 0)
         np.testing.assert_array_equal(manager.processor.transformed_image, before)
         self.showinfo.assert_called_once()
+
+    def test_time_limit_is_off_by_default(self):
+        manager = self.start_round(3)
+        self.assertIsNone(manager.deadline)
+        self.assertIsNone(manager.timer_after_id)
+        self.assertEqual(self.gui.selected_difficulty.get(), "Normal")
+        self.assertEqual(self.gui.selected_time.get(), "Off")
+        self.assertEqual(self.gui.timer_label.cget("text"), "Time: Off")
+
+    def test_countdown_uses_elapsed_time_instead_of_callback_count(self):
+        with patch("game.game_manager.time.monotonic", return_value=1000) as clock:
+            manager = self.start_round(3, time_limit=120)
+            self.assertEqual(self.gui.timer_label.cget("text"), "Time: 2:00")
+            for now, expected in ((1030.2, "Time: 1:30"), (1105, "Time: 0:15")):
+                # Emulate a delayed Tkinter callback without waiting in real time.
+                manager.stop_timer()
+                clock.return_value = now
+                manager._update_timer()
+                self.assertEqual(self.gui.timer_label.cget("text"), expected)
+                self.assertFalse(manager.finished)
+            manager.stop_timer()
+            clock.return_value = 1120
+            manager._update_timer()
+            self.assertTrue(manager.timed_out)
+            self.assertEqual(self.gui.timer_label.cget("text"), "Time: 0:00 (expired)")
+            self.assertIsNone(manager.timer_after_id)
+            self.showinfo.assert_called_once()
+
+    def test_deadline_blocks_clicks_and_hints_before_the_next_timer_callback(self):
+        for handler_name in ("left_click", "right_click", "shift_left_click", "show_hint"):
+            with self.subTest(handler=handler_name):
+                self.showinfo.reset_mock()
+                with patch("game.game_manager.time.monotonic", return_value=1000) as clock:
+                    manager = self.start_round(3, time_limit=2)
+                    manager.left_click(self.tile_event(manager, 0, 0))
+                    manager.show_hint()
+                    before = manager.processor.transformed_image.copy()
+                    pending = manager.timer_after_id
+                    clock.return_value = 1002
+                    handler = getattr(manager, handler_name)
+                    if handler_name == "show_hint":
+                        handler()
+                    else:
+                        handler(self.tile_event(manager, 0, 1))
+                    self.assertTrue(manager.finished)
+                    self.assertTrue(manager.timed_out)
+                    self.assertEqual(manager.moves, 0)
+                    self.assertEqual(manager.hints_used, 1)
+                    self.assertIsNone(manager.puzzle.selected_position)
+                    self.assertIsNone(manager.hint_tile)
+                    self.assertIsNone(manager.timer_after_id)
+                    self.assertNotIn(pending, self.root.tk.call("after", "info"))
+                    self.assertEqual(self.gui.canvas_game.find_withtag("selection"), ())
+                    self.assertEqual(self.gui.canvas_game.find_withtag("hint"), ())
+                    self.assertEqual(self.gui.canvas_orig.find_withtag("hint"), ())
+                    self.assertEqual(self.gui.hint_button.cget("state"), tk.DISABLED)
+                    self.assertEqual(self.gui.solve_button.cget("state"), tk.NORMAL)
+                    np.testing.assert_array_equal(manager.processor.reassemble_image(), before)
+                    manager.right_click(self.tile_event(manager, 0, 0))
+                    manager.show_hint()
+                    manager._update_timer()
+                    self.showinfo.assert_called_once()
+
+    def test_solve_still_restores_the_board_after_timeout(self):
+        with patch("game.game_manager.time.monotonic", return_value=1000) as clock:
+            manager = self.start_round(3, time_limit=2)
+            manager.right_click(self.tile_event(manager, 0, 0))
+            clock.return_value = 1002
+            manager.right_click(self.tile_event(manager, 0, 0))
+            self.assertTrue(manager.timed_out)
+            self.showinfo.reset_mock()
+            self.gui.solve_button.invoke()
+            self.assertTrue(manager.finished)
+            self.assertFalse(manager.timed_out)
+            self.assertEqual(manager.moves, 0)
+            self.assertEqual(manager.processor.incorrect_tile_count, 0)
+            self.assertEqual(self.gui.solve_button.cget("state"), tk.DISABLED)
+            np.testing.assert_array_equal(manager.processor.reassemble_image(),
+                                          manager.processor.original_image)
+            self.showinfo.assert_called_once()
+
+    def test_completion_and_solve_cancel_the_timer(self):
+        for finish_method in ("completion", "solve"):
+            with self.subTest(finish_method=finish_method):
+                self.showinfo.reset_mock()
+                with patch("game.game_manager.time.monotonic", return_value=1000):
+                    manager = self.start_round(3, time_limit=120)
+                    pending = manager.timer_after_id
+                    if finish_method == "completion":
+                        for turn in range(3):
+                            manager.right_click(self.tile_event(manager, 2, 2))
+                    else:
+                        manager.solve_puzzle()
+                    self.assertTrue(manager.finished)
+                    self.assertFalse(manager.timed_out)
+                    self.assertIsNone(manager.timer_after_id)
+                    self.assertNotIn(pending, self.root.tk.call("after", "info"))
+                    self.showinfo.assert_called_once()
+
+    def test_reload_applies_challenge_settings_and_replaces_the_timer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "new.png"
+            success, encoded = cv2.imencode(".png", make_processor(3).original_image)
+            self.assertTrue(success)
+            encoded.tofile(str(path))
+            with patch("game.game_manager.time.monotonic", return_value=1000) as clock:
+                old_manager = self.start_round(3, time_limit=120)
+                self.gui.game_manager = old_manager
+                pending = old_manager.timer_after_id
+                self.gui.selected_difficulty.set("Hard")
+                self.gui.selected_time.set("5 minutes")
+                for selected_path in ("", str(Path(directory) / "missing.png")):
+                    with patch("gui.main_window.filedialog.askopenfilename", return_value=selected_path), \
+                            patch("gui.main_window.messagebox.showerror"):
+                        self.gui.load_image()
+                    self.assertIs(self.gui.game_manager, old_manager)
+                    self.assertEqual(old_manager.deadline, 1120)
+                    self.assertEqual(old_manager.timer_after_id, pending)
+                    self.assertIn(pending, self.root.tk.call("after", "info"))
+                # A fresh round is also allowed after the old round has expired.
+                clock.return_value = 1120
+                old_manager.show_hint()
+                self.assertTrue(old_manager.timed_out)
+                with patch("gui.main_window.filedialog.askopenfilename", return_value=str(path)):
+                    self.gui.load_image()
+                manager = self.gui.game_manager
+                self.addCleanup(manager.stop_timer)
+                self.assertIsNot(manager, old_manager)
+                self.assertFalse(manager.finished)
+                self.assertFalse(manager.timed_out)
+                self.assertEqual(manager.deadline, 1420)
+                self.assertIsNotNone(manager.timer_after_id)
+                self.assertNotIn(pending, self.root.tk.call("after", "info"))
+                self.assertEqual(self.gui.timer_label.cget("text"), "Time: 5:00")
+                self.assertEqual(manager.processor.difficulty, "Hard")
+                self.assertEqual(len(manager.processor.transformation_log), 8)
+                self.assertEqual(manager.moves, 0)
+                self.assertEqual(manager.hints_used, 0)
+
+    def test_closing_the_window_cancels_the_timer(self):
+        manager = self.start_round(3, time_limit=120)
+        self.gui.game_manager = manager
+        pending = manager.timer_after_id
+        with patch.object(self.root, "destroy") as destroy:
+            self.gui.close_window()
+        self.assertIsNone(manager.timer_after_id)
+        self.assertNotIn(pending, self.root.tk.call("after", "info"))
+        destroy.assert_called_once()
+
+    def test_tkinter_timer_callback_ends_the_round(self):
+        with patch("game.game_manager.time.monotonic", return_value=1000) as clock:
+            manager = self.start_round(3, time_limit=2)
+            manager.stop_timer()
+            # Let Tkinter deliver the callback immediately instead of waiting.
+            manager.timer_after_id = self.root.after(0, manager._update_timer)
+            clock.return_value = 1002
+            self.root.update()
+            self.assertTrue(manager.finished)
+            self.assertTrue(manager.timed_out)
+            self.assertIsNone(manager.timer_after_id)
+            self.showinfo.assert_called_once()
+
+    def test_successful_reload_cancels_the_old_timer_and_can_turn_timing_off(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "new.png"
+            success, encoded = cv2.imencode(".png", make_processor(3).original_image)
+            self.assertTrue(success)
+            encoded.tofile(str(path))
+            with patch("game.game_manager.time.monotonic", return_value=1000):
+                old_manager = self.start_round(3, time_limit=120)
+                self.gui.game_manager = old_manager
+                pending = old_manager.timer_after_id
+                self.gui.selected_difficulty.set("Easy")
+                self.gui.selected_time.set("Off")
+                with patch("gui.main_window.filedialog.askopenfilename", return_value=str(path)):
+                    self.gui.load_image()
+                manager = self.gui.game_manager
+                self.assertIsNone(old_manager.timer_after_id)
+                self.assertNotIn(pending, self.root.tk.call("after", "info"))
+                self.assertIsNone(manager.deadline)
+                self.assertIsNone(manager.timer_after_id)
+                self.assertEqual(self.gui.timer_label.cget("text"), "Time: Off")
+                self.assertEqual(manager.processor.difficulty, "Easy")
+                self.assertEqual(len(manager.processor.transformation_log), 4)
 
 
 if __name__ == "__main__":

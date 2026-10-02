@@ -15,17 +15,22 @@ class PuzzleGUI:
     Main Tkinter interface for the image puzzle game.
     Manages the layout, buttons, and canvas displays.
     """
+    TIME_LIMITS = {"Off": 0, "2 minutes": 120, "5 minutes": 300, "10 minutes": 600}
+
     def __init__(self, root):
         """
         Set up the GUI components, core objects, and button states
         """
         self.root = root
         self.root.title("HIT137 Assignment 3 - Image Puzzle")
-        self.root.geometry("1000x600")
+        self.root.geometry("1000x650")
+        self.root.minsize(1000, 650)
+        self.root.protocol("WM_DELETE_WINDOW", self.close_window)
 
         self.image_processor = ImageProcessor(max_size=(400, 400))
         self.original_photo = None
         self.game_photo = None
+        self.game_manager = None
         
         self.setup_ui()
         self.hint_button.config(state=tk.DISABLED)
@@ -65,6 +70,35 @@ class PuzzleGUI:
         # Moves and tile status label
         self.score_label = tk.Label(self.menu_frame, text="Moves: 0 | Incorrect: 0", font=("Arial", 12))
         self.score_label.pack(side=tk.RIGHT, padx=20)
+
+        # These settings are applied when the next image is loaded.
+        self.challenge_frame = tk.Frame(self.root)
+        self.challenge_frame.pack(anchor="nw", fill=tk.X, padx=10, pady=5)
+        tk.Label(self.challenge_frame, text="Next image:", font=("Arial", 11)).pack(
+            side=tk.LEFT, padx=5
+        )
+        tk.Label(self.challenge_frame, text="Difficulty:", font=("Arial", 11)).pack(
+            side=tk.LEFT, padx=5
+        )
+        self.selected_difficulty = tk.StringVar(self.root, value="Normal")
+        self.difficulty_dropdown = tk.OptionMenu(
+            self.challenge_frame, self.selected_difficulty, "Easy", "Normal", "Hard"
+        )
+        self.difficulty_dropdown.config(width=7, font=("Arial", 11))
+        self.difficulty_dropdown.pack(side=tk.LEFT, padx=5)
+        tk.Label(self.challenge_frame, text="Time limit:", font=("Arial", 11)).pack(
+            side=tk.LEFT, padx=5
+        )
+        self.selected_time = tk.StringVar(self.root, value="Off")
+        self.time_dropdown = tk.OptionMenu(
+            self.challenge_frame, self.selected_time, *self.TIME_LIMITS
+        )
+        self.time_dropdown.config(width=10, font=("Arial", 11))
+        self.time_dropdown.pack(side=tk.LEFT, padx=5)
+        self.timer_label = tk.Label(
+            self.challenge_frame, text="Time: Off", font=("Arial", 12)
+        )
+        self.timer_label.pack(side=tk.RIGHT, padx=20)
 
         # Reserve space at the bottom for the player controls.
         self.controls_label = tk.Label(
@@ -109,10 +143,14 @@ class PuzzleGUI:
                 original_image, transformed_image = self.image_processor.process_image(
                     file_path,
                     self.selected_size.get(),
+                    self.selected_difficulty.get(),
                 )
             except ImageProcessingError as error:
                 messagebox.showerror("Image Error", str(error))
                 return
+
+            if self.game_manager is not None:
+                self.game_manager.stop_timer()
 
             self.original_photo = self.display_image(
                 self.canvas_orig,
@@ -133,7 +171,8 @@ class PuzzleGUI:
             self.hint_button.config(text="Hint (3)", state=tk.NORMAL)
             self.solve_button.config(state=tk.NORMAL)
 
-            self.game_manager = GameManager(self)
+            time_limit = self.TIME_LIMITS[self.selected_time.get()]
+            self.game_manager = GameManager(self, time_limit)
 
             # send mouse events to the game manager
             self.canvas_game.bind("<Button-1>", self.game_manager.left_click)
@@ -201,15 +240,14 @@ class PuzzleGUI:
         """
         Display the restored image when the existing Solve button is used.
         """
-        if self.image_processor.original_image is None:
-            return
+        if self.game_manager is not None:
+            self.game_manager.solve_puzzle()
 
-        solved_image = self.image_processor.solved_image()
-        self.game_photo = self.display_image(self.canvas_game, solved_image)
-        self.draw_game_grid(solved_image)
-        self.score_label.config(text="Moves: 0 | Incorrect: 0")
-        self.hint_button.config(state=tk.DISABLED)
-        self.solve_button.config(state=tk.DISABLED)
+    def close_window(self):
+        """Cancel the round's scheduled timer before closing Tkinter."""
+        if self.game_manager is not None:
+            self.game_manager.stop_timer()
+        self.root.destroy()
 
 
 def main():

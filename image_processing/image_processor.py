@@ -46,6 +46,11 @@ class ImageProcessor:
     """
     GRID_SIZES = (3, 4, 5)
     TRANSFORMATION_COUNTS = {3: 6, 4: 12, 5: 20}
+    DIFFICULTY_COUNTS = {
+        "Easy": {3: 4, 4: 8, 5: 12},
+        "Normal": TRANSFORMATION_COUNTS,
+        "Hard": {3: 8, 4: 15, 5: 24},
+    }
     def __init__(
         self,
         max_size: Tuple[int, int] = (400, 400),
@@ -62,6 +67,7 @@ class ImageProcessor:
         self.padding_colour = tuple(int(channel) for channel in padding_colour)
         self.rng = rng if rng is not None else random.Random()
         self.grid_size: Optional[int] = None
+        self.difficulty = "Normal"
         self.original_image: Optional[np.ndarray] = None
         self.transformed_image: Optional[np.ndarray] = None
         self.tiles: List[ImageTile] = []
@@ -218,8 +224,9 @@ class ImageProcessor:
     ) -> List[ImageTile]:
         """Scramble distinct tiles using swaps, rotations, and flips.
 
-        Exactly 6, 12, or 20 operations are applied for 3x3, 4x4, and 5x5
-        puzzles respectively.  There is one swap (which consumes two unique
+        Normal difficulty applies 6, 12, or 20 operations for 3x3, 4x4, and
+        5x5 puzzles. Easy uses fewer operations and Hard uses more.
+        There is one swap (which consumes two unique
         tiles); every other operation consumes one unique tile.  No tile is
         targeted twice, and every scramble contains all three required
         transformation types.
@@ -230,7 +237,7 @@ class ImageProcessor:
             raise ImageProcessingError("A grid size has not been selected")
         self._validate_tile_list(board, self.grid_size)
 
-        operation_count = self.TRANSFORMATION_COUNTS[self.grid_size]
+        operation_count = self.DIFFICULTY_COUNTS[self.difficulty][self.grid_size]
         targeted_tile_count = operation_count + 1  # A swap targets two tiles.
         selected_tiles = self.rng.sample(board, targeted_tile_count)
         self.rng.shuffle(selected_tiles)
@@ -269,7 +276,8 @@ class ImageProcessor:
         return cv2.vconcat(rows)
 
     def process_image(
-        self, file_path: Union[str, Path], grid_size: GridSize
+        self, file_path: Union[str, Path], grid_size: GridSize,
+        difficulty: str = "Normal",
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Run the complete load-to-scrambled-image pipeline.
 
@@ -279,6 +287,8 @@ class ImageProcessor:
         """
 
         selected_grid_size = self.parse_grid_size(grid_size)
+        if difficulty not in self.DIFFICULTY_COUNTS:
+            raise ImageProcessingError("Difficulty must be Easy, Normal, or Hard")
         loaded_image = self.load_image(file_path)
         prepared_image = self.resize_and_pad(loaded_image, selected_grid_size)
 
@@ -286,6 +296,7 @@ class ImageProcessor:
         # therefore cannot leave a half-reset puzzle round behind.
         new_tiles = self.slice_image(prepared_image, selected_grid_size)
         self.grid_size = selected_grid_size
+        self.difficulty = difficulty
         self.original_image = prepared_image.copy()
         self.tiles = new_tiles
         self.apply_random_transformations()
