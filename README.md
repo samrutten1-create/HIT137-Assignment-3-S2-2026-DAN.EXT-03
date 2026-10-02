@@ -70,6 +70,7 @@ fresh counters, selection, and hints.
 | `puzzle/actions.py` | Define the common action base class and its three subclasses. |
 | `game/game_manager.py` | Coordinate actions, scoring, hints, overlays, solving, and completion. |
 | `tests/test_actions.py` | Test action behavior and its effect on the controller and GUI. |
+| `tests/test_image_processor.py` | Test image loading, preparation, scrambling, and restoration. |
 
 ## Object-oriented design
 
@@ -108,3 +109,29 @@ Run the automated tests from the project folder:
 ```powershell
 python -B -m unittest discover -s tests -v
 ```
+
+The suite contains 30 tests using Python's built-in `unittest` framework, so no
+additional testing library is required. Some tests check several inputs using
+subtests, including all three grid sizes.
+
+| Test file | Coverage |
+| --- | --- |
+| `tests/test_actions.py` | Selection, deselection, swaps, rotations, flips, mixed orientation changes, move counting, correctness ticks, hints and their limit, completion, Solve, cancelled/invalid loads, and round resets. Also checks tile edges and overlay alignment against Tkinter's actual image bounds, including the 399x399 board used for 3x3 puzzles. |
+| `tests/test_image_processor.py` | JPG/JPEG, PNG, and BMP loading; filenames with non-ASCII characters; grayscale and transparent images; invalid files and grid sizes; aspect ratio and padding; tile ordering and independent image copies; repeatable scrambling with no repeated tile targets; restoration; and preserving the board after a failed load. |
+
+To run just one test file:
+
+```powershell
+python -B -m unittest discover -s tests -p test_actions.py -v
+python -B -m unittest discover -s tests -p test_image_processor.py -v
+```
+
+The GUI tests create withdrawn Tkinter windows and mock file dialogs and
+completion/error message boxes. They require a working Tkinter display; if
+one is unavailable, those tests are reported as skipped. Image-processing and
+puzzle-action tests can run without a display. Test images are generated in
+memory or temporary folders, which are cleaned up automatically.
+
+Import checks only verify that modules load. Automated tests check model state,
+controller behavior, and canvas contents; manually check actual mouse controls,
+window resizing, and visual appearance before submission.
