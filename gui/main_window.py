@@ -148,11 +148,16 @@ class PuzzleGUI:
         canvas.delete("all")
         canvas_width = int(canvas.cget("width"))
         canvas_height = int(canvas.cget("height"))
+        image_height, image_width = image.shape[:2]
+        left = (canvas_width - image_width) // 2
+        top = (canvas_height - image_height) // 2
+        # Use the same top-left corner as click mapping and overlays.
+        # A centre anchor rounds odd image sizes differently in Tkinter.
         canvas.create_image(
-            canvas_width // 2,
-            canvas_height // 2,
+            left,
+            top,
             image=photo,
-            anchor=tk.CENTER,
+            anchor=tk.NW,
         )
         return photo
 

@@ -18,9 +18,9 @@ from puzzle.actions import FlipAction, PuzzleAction, RotateAction, SelectAction
 from puzzle.puzzle import Puzzle
 
 
-def make_processor(grid_size):
+def make_processor(grid_size, tile_side=4):
     """Create a small board with distinct pixels, without reading image files."""
-    side = grid_size * 4
+    side = grid_size * tile_side
     image = np.arange(side * side * 3).reshape(side, side, 3).astype(np.uint8)
     processor = ImageProcessor()
     processor.grid_size = grid_size
@@ -156,8 +156,8 @@ class GameActionTests(unittest.TestCase):
         self.showinfo = dialog_patch.start()
         self.addCleanup(dialog_patch.stop)
 
-    def start_round(self, grid_size):
-        processor = make_processor(grid_size)
+    def start_round(self, grid_size, tile_side=4):
+        processor = make_processor(grid_size, tile_side)
         # Leave one tile rotated so the game starts with an unfinished board.
         Puzzle(processor).rotate((grid_size - 1, grid_size - 1))
         processor.transformed_image = processor.reassemble_image()
@@ -334,6 +334,77 @@ class GameActionTests(unittest.TestCase):
                             self.assertIsNone(manager.puzzle.selected_position)
                             self.assertEqual(self.gui.canvas_game.find_withtag("selection"), ())
                 self.assertEqual(manager.moves, 0)
+
+    def test_full_size_board_clicks_match_rendered_tile_edges(self):
+        for grid_size, tile_side in ((3, 133), (4, 100), (5, 80)):
+            with self.subTest(grid_size=grid_size):
+                manager = self.start_round(grid_size, tile_side)
+                canvas = self.gui.canvas_game
+                # Read Tkinter's actual image bounds instead of assuming its placement.
+                image_item = next(item for item in canvas.find_all()
+                                  if canvas.type(item) == "image")
+                left, top, right, bottom = canvas.bbox(image_item)
+                for row in range(grid_size):
+                    for column in range(grid_size):
+                        for x_offset, y_offset in ((0, 0), (tile_side - 1, 0),
+                                                   (0, tile_side - 1),
+                                                   (tile_side - 1, tile_side - 1)):
+                            event = SimpleNamespace(
+                                x=left + column * tile_side + x_offset,
+                                y=top + row * tile_side + y_offset,
+                            )
+                            manager.left_click(event)
+                            self.assertEqual(manager.puzzle.selected_position, (row, column))
+                            selection = canvas.find_withtag("selection")[0]
+                            self.assertEqual(canvas.coords(selection), [
+                                left + column * tile_side, top + row * tile_side,
+                                left + (column + 1) * tile_side, top + (row + 1) * tile_side,
+                            ])
+                            manager.left_click(event)
+                for event in (SimpleNamespace(x=left - 1, y=top),
+                              SimpleNamespace(x=right, y=top),
+                              SimpleNamespace(x=left, y=top - 1),
+                              SimpleNamespace(x=left, y=bottom)):
+                    manager.left_click(event)
+                    self.assertIsNone(manager.puzzle.selected_position)
+                self.assertEqual(manager.moves, 0)
+
+    def test_odd_sized_board_grid_ticks_and_hints_match_image_bounds(self):
+        manager = self.start_round(3, 133)
+        canvas = self.gui.canvas_game
+        image_item = next(item for item in canvas.find_all() if canvas.type(item) == "image")
+        left, top, right, bottom = canvas.bbox(image_item)
+        expected_lines = []
+        for boundary in (1, 2):
+            x = left + boundary * 133
+            y = top + boundary * 133
+            expected_lines.append([x, top, x, bottom])
+            expected_lines.append([left, y, right, y])
+        lines = [canvas.coords(item) for item in canvas.find_all() if canvas.type(item) == "line"]
+        self.assertEqual(lines, expected_lines)
+        expected_ticks = []
+        for tile in manager.processor.tiles:
+            if tile.is_correct:
+                row, column = tile.current_position
+                expected_ticks.append([left + column * 133 + 14, top + row * 133 + 14])
+        self.assertEqual([canvas.coords(item) for item in canvas.find_withtag("tick")],
+                         expected_ticks)
+
+        tile = manager.puzzle.get_tile_at((0, 0))
+        manager.left_click(SimpleNamespace(x=left + 20, y=top + 20))
+        manager.left_click(SimpleNamespace(x=left + 153, y=top + 20))
+        with patch("game.game_manager.random.choice", return_value=tile):
+            manager.show_hint()
+        for hint_canvas, position in ((canvas, (0, 1)), (self.gui.canvas_orig, (0, 0))):
+            image_item = next(item for item in hint_canvas.find_all()
+                              if hint_canvas.type(item) == "image")
+            hint_left, hint_top, _, _ = hint_canvas.bbox(image_item)
+            row, column = position
+            centre_x = hint_left + column * 133 + 66
+            centre_y = hint_top + row * 133 + 66
+            circle = hint_canvas.find_withtag("hint")[0]
+            self.assertEqual(hint_canvas.coords(circle),
+                             [centre_x - 33, centre_y - 33, centre_x + 33, centre_y + 33])
 
     def test_hint_limit_cannot_be_bypassed_by_calling_the_handler(self):
         manager = self.start_round(3)
